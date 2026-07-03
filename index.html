@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>台灣 3D 立體地景 · 無人機視角導覽</title>
+<style>
+  :root{
+    --panel-bg: rgba(15,26,40,.82);
+    --accent: #3fc1c9;
+    --accent2: #ffd166;
+    --text: #eef6fb;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  html,body{ width:100%; height:100%; overflow:hidden; font-family:"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif; background:#0b1c2c; }
+  #app{ position:fixed; inset:0; }
+  canvas{ display:block; }
+
+  /* ---------- 頂部標題 ---------- */
+  #titleBar{
+    position:fixed; top:10px; left:50%; transform:translateX(-50%);
+    background:var(--panel-bg); color:var(--text);
+    padding:8px 20px; border-radius:14px; text-align:center;
+    backdrop-filter:blur(6px); box-shadow:0 4px 16px rgba(0,0,0,.35);
+    pointer-events:none; z-index:20; white-space:nowrap;
+  }
+  #titleBar h1{ font-size:17px; letter-spacing:1px; }
+  #titleBar p{ font-size:11px; color:#a8c6d8; margin-top:2px; }
+
+  /* ---------- 左側地景清單 ---------- */
+  #panel{
+    position:fixed; top:70px; left:12px; bottom:12px; width:210px;
+    background:var(--panel-bg); border-radius:16px; color:var(--text);
+    display:flex; flex-direction:column; backdrop-filter:blur(6px);
+    box-shadow:0 4px 16px rgba(0,0,0,.35); z-index:20;
+    transition:transform .3s ease;
+  }
+  #panel.hidden{ transform:translateX(-240px); }
+  #panel h2{ font-size:14px; padding:12px 14px 8px; color:var(--accent2); }
+  #list{ flex:1; overflow-y:auto; padding:0 8px 10px; }
+  #list::-webkit-scrollbar{ width:5px; } #list::-webkit-scrollbar-thumb{ background:#3b566e; border-radius:3px; }
+  .item{
+    display:flex; align-items:center; gap:8px;
+    padding:7px 8px; border-radius:10px; cursor:pointer; font-size:13px;
+    transition:background .15s;
+  }
+  .item:hover{ background:rgba(255,255,255,.1); }
+  .item.active{ background:rgba(63,193,201,.25); outline:1px solid var(--accent); }
+  .item .county{ font-size:10px; color:#9fc1d4; background:rgba(255,255,255,.08); border-radius:6px; padding:2px 5px; flex:none; min-width:44px; text-align:center; }
+
+  #panelToggle{
+    position:fixed; top:70px; left:12px; z-index:21;
+    width:38px; height:38px; border-radius:12px; border:none;
+    background:var(--panel-bg); color:var(--text); font-size:18px; cursor:pointer;
+    box-shadow:0 4px 12px rgba(0,0,0,.35); display:none;
+  }
+
+  /* ---------- 右上操作按鈕 ---------- */
+  #actions{ position:fixed; top:70px; right:12px; z-index:20; display:flex; flex-direction:column; gap:8px; }
+  .btn{
+    background:var(--panel-bg); color:var(--text); border:none; border-radius:12px;
+    padding:9px 14px; font-size:13px; cursor:pointer; backdrop-filter:blur(6px);
+    box-shadow:0 4px 12px rgba(0,0,0,.35); transition:background .15s; text-align:left;
+    font-family:inherit;
+  }
+  .btn:hover{ background:rgba(63,193,201,.35); }
+  .btn.on{ background:rgba(63,193,201,.45); outline:1px solid var(--accent); }
+
+  /* ---------- 資訊卡 ---------- */
+  #info{
+    position:fixed; right:12px; bottom:12px; width:280px; max-width:calc(100vw - 24px);
+    background:var(--panel-bg); border-radius:16px; color:var(--text);
+    padding:14px 16px; backdrop-filter:blur(6px); z-index:20;
+    box-shadow:0 4px 16px rgba(0,0,0,.35); display:none;
+  }
+  #info.show{ display:block; }
+  #info .county{ font-size:11px; color:#0b1c2c; background:var(--accent2); border-radius:6px; padding:2px 8px; display:inline-block; }
+  #info h3{ font-size:17px; margin:6px 0 6px; color:#fff; }
+  #info p{ font-size:12.5px; line-height:1.7; color:#cfe3ee; }
+  #info .close{ position:absolute; top:8px; right:12px; cursor:pointer; color:#89a9bc; font-size:16px; border:none; background:none; }
+
+  /* ---------- 底部操作說明 ---------- */
+  #help{
+    position:fixed; left:50%; bottom:10px; transform:translateX(-50%);
+    background:var(--panel-bg); color:#bcd6e4; font-size:11.5px;
+    padding:6px 16px; border-radius:12px; z-index:19; pointer-events:none;
+    backdrop-filter:blur(6px); white-space:nowrap;
+  }
+
+  /* ---------- 速度滑桿 ---------- */
+  #speedBox{
+    position:fixed; right:12px; top:230px; z-index:20;
+    background:var(--panel-bg); border-radius:12px; padding:8px 12px;
+    color:var(--text); font-size:11px; text-align:center; backdrop-filter:blur(6px);
+  }
+  #speedBox input{ width:90px; accent-color:var(--accent); }
+
+  /* ---------- 手機虛擬搖桿 ---------- */
+  .stick{ position:fixed; width:110px; height:110px; border-radius:50%;
+    border:2px solid rgba(255,255,255,.35); background:rgba(255,255,255,.06);
+    z-index:30; display:none; pointer-events:none; }
+  .stick .knob{ position:absolute; left:50%; top:50%; width:46px; height:46px; border-radius:50%;
+    background:rgba(63,193,201,.55); transform:translate(-50%,-50%); }
+  #altBtns{ position:fixed; right:14px; bottom:120px; z-index:25; display:none; flex-direction:column; gap:10px; }
+  #altBtns button{ width:52px; height:52px; border-radius:50%; border:none; font-size:20px;
+    background:var(--panel-bg); color:var(--text); box-shadow:0 4px 12px rgba(0,0,0,.35); }
+
+  #loading{
+    position:fixed; inset:0; background:#0b1c2c; z-index:99;
+    display:flex; align-items:center; justify-content:center; color:#9fc1d4;
+    font-size:15px; letter-spacing:2px; transition:opacity .5s;
+  }
+
+  @media (max-width: 820px){
+    #panel{ width:190px; }
+    #panelToggle{ display:block; }
+    #panel.hidden ~ #panelToggle{ display:block; }
+    #help{ display:none; }
+    #titleBar h1{ font-size:14px; } #titleBar p{ display:none; }
+    #speedBox{ display:none; }
+    #actions{ flex-direction:row; top:auto; bottom:12px; right:auto; left:50%; transform:translateX(-50%); }
+    .btn{ padding:8px 10px; font-size:12px; }
+    #info{ bottom:64px; }
+    #altBtns{ display:flex; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="titleBar">
+  <h1>🚁 台灣 3D 立體地景 — 無人機視角導覽</h1>
+  <p>點選左側地景飛過去｜滑鼠拖曳轉視角｜W A S D 移動｜Space／Shift 升降｜滾輪前進</p>
+</div>
+
+<button id="panelToggle">☰</button>
+<div id="panel">
+  <h2>📍 各縣市著名地景（22）</h2>
+  <div id="list"></div>
+</div>
+
+<div id="actions">
+  <button class="btn" id="btnTour">▶️ 自動導覽</button>
+  <button class="btn" id="btnOrbit">🔄 環繞模式</button>
+  <button class="btn" id="btnHome">🏝️ 全島鳥瞰</button>
+</div>
+
+<div id="speedBox">
+  飛行速度<br>
+  <input type="range" id="speed" min="0.3" max="4" step="0.1" value="1">
+</div>
+
+<div id="info">
+  <button class="close" id="infoClose">✕</button>
+  <span class="county" id="infoCounty"></span>
+  <h3 id="infoName"></h3>
+  <p id="infoDesc"></p>
+</div>
+
+<div id="help">滑鼠拖曳：轉動視角　｜　W/A/S/D：飛行　｜　Space：上升　Shift：下降　｜　滾輪：前進後退　｜　點擊地景：查看介紹</div>
+
+<div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+<div id="altBtns">
+  <button id="altUp">▲</button>
+  <button id="altDown">▼</button>
+</div>
+
+<div id="loading">正在建立台灣島嶼…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* =========================================================
+   台灣 3D 立體地景 · 無人機視角
+   座標系：x = (經度-121)×120，z = (23.6-緯度)×120，y 向上
+   ========================================================= */
+"use strict";
+
+const W = () => window.innerWidth, H = () => window.innerHeight;
+const X = lon => (lon - 121.0) * 120;
+const Z = lat => (23.6 - lat) * 120;
+const GROUND_Y = 6.8;   // 島上地面高度
+const SEA_Y    = 1.2;   // 海平面
+
+/* ---------- 基本場景 ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fd0f0);
+scene.fog = new THREE.Fog(0x9fd0f0, 700, 2200);
+
+const camera = new THREE.PerspectiveCamera(55, W()/H(), 0.5, 4000);
+camera.position.set(40, 300, 380);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W(), H());
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.getElementById("app").appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f7d4e, 0.85));
+const sun = new THREE.DirectionalLight(0xfff2d9, 1.15);
+sun.position.set(260, 420, 160);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+const SC = 420;
+sun.shadow.camera.left=-SC; sun.shadow.camera.right=SC;
+sun.shadow.camera.top=SC; sun.shadow.camera.bottom=-SC;
+sun.shadow.camera.far = 1200;
+scene.add(sun);
+
+/* ---------- 材質小工具 ---------- */
+const MAT = {};
+function mat(color, opt={}){
+  const key = color + JSON.stringify(opt);
+  if(!MAT[key]) MAT[key] = new THREE.MeshStandardMaterial(Object.assign({ color, roughness:.85, metalness:.05, flatShading:true }, opt));
+  return MAT[key];
+}
+function mesh(geo, color, opt){
+  const m = new THREE.Mesh(geo, mat(color, opt));
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+const box  = (w,h,d,c,o) => mesh(new THREE.BoxGeometry(w,h,d), c, o);
+const cyl  = (rt,rb,h,c,seg=10,o) => mesh(new THREE.CylinderGeometry(rt,rb,h,seg), c, o);
+const cone = (r,h,c,seg=8,o) => mesh(new THREE.ConeGeometry(r,h,seg), c, o);
+const ball = (r,c,seg=10,o) => mesh(new THREE.SphereGeometry(r,seg,seg), c, o);
+
+/* ---------- 海 ---------- */
+const sea = new THREE.Mesh(
+  new THREE.PlaneGeometry(3600, 3600, 60, 60),
+  new THREE.MeshStandardMaterial({ color:0x1e77b5, roughness:.55, metalness:.15, transparent:true, opacity:.93, flatShading:true })
+);
+sea.rotation.x = -Math.PI/2;
+sea.position.y = SEA_Y;
+sea.receiveShadow = true;
+scene.add(sea);
+const seaPos = sea.geometry.attributes.position;
+const seaBase = seaPos.array.slice();
+
+const deepSea = new THREE.Mesh(new THREE.PlaneGeometry(3600,3600), mat(0x0d3f66));
+deepSea.rotation.x = -Math.PI/2; deepSea.position.y = -1.5;
+scene.add(deepSea);
+
+/* ---------- 台灣本島 ---------- */
+const coast = [ // [經度, 緯度] 順時針
+  [121.73,25.30],[121.93,25.13],[122.00,25.01],[121.83,24.85],[121.87,24.55],
+  [121.82,24.30],[121.65,24.00],[121.62,23.75],[121.52,23.35],[121.42,23.10],
+  [121.20,22.75],[121.00,22.30],[120.90,22.00],[120.86,21.90],[120.74,21.95],
+  [120.70,22.15],[120.52,22.40],[120.45,22.55],[120.30,22.55],[120.17,22.85],
+  [120.08,23.05],[120.10,23.35],[120.13,23.60],[120.25,23.85],[120.32,24.05],
+  [120.47,24.20],[120.52,24.40],[120.68,24.65],[120.85,24.90],[121.00,25.05],
+  [121.20,25.12],[121.40,25.18],[121.58,25.28]
+];
+const shape = new THREE.Shape();
+coast.forEach(([lon,lat],i)=>{
+  const x = X(lon), y = (lat-23.6)*120; // shape 平面：y 向北
+  i===0 ? shape.moveTo(x,y) : shape.lineTo(x,y);
+});
+shape.closePath();
+const islandGeo = new THREE.ExtrudeGeometry(shape, {
+  depth:4.5, bevelEnabled:true, bevelThickness:2, bevelSize:3, bevelSegments:2, curveSegments:4
+});
+islandGeo.rotateX(-Math.PI/2);
+const island = new THREE.Mesh(islandGeo, new THREE.MeshStandardMaterial({ color:0x67a95c, roughness:.9, flatShading:true }));
+island.castShadow = true; island.receiveShadow = true;
+scene.add(island);
+
+/* ---------- 中央山脈（低多邊形山群） ---------- */
+const ridge = [ // [經度, 緯度, 高, 半徑]
+  [121.35,24.55,20,15],[121.23,24.38,26,17],[121.10,24.20,23,18],
+  [121.05,23.95,26,19],[120.96,23.47,36,18],[120.95,23.70,29,19],
+  [120.90,23.20,27,18],[120.86,22.90,24,17],[120.80,22.60,20,15],
+  [120.78,22.30,15,12],[121.40,23.90,15,11],[121.30,23.45,14,11],[121.18,23.05,13,10]
+];
+const mountains = new THREE.Group();
+function addMountain(lon,lat,h,r,c){
+  const m = cone(r, h, c, 7);
+  m.position.set(X(lon), 4.5 + h/2 - 1.2, Z(lat));
+  mountains.add(m);
+}
+ridge.forEach(([lon,lat,h,r])=>{
+  const c = h > 30 ? 0x8a7f6a : (h > 22 ? 0x5f7d4a : 0x4f8a4f);
+  addMountain(lon,lat,h,r,c);
+  if(h > 30){ // 玉山雪帽
+    const cap = cone(r*0.32, h*0.28, 0xf4f8fa, 7);
+    cap.position.set(X(lon), 4.5 + h - h*0.14 - 1.2, Z(lat));
+    mountains.add(cap);
+  }
+});
+// 丘陵散布
+let seed = 7;
+const rnd = () => (seed = (seed*16807)%2147483647) / 2147483647;
+for(let i=0;i<26;i++){
+  const t = rnd();
+  const baseLon = 120.85 + t*0.5, baseLat = 22.3 + rnd()*2.2;
+  const h = 6 + rnd()*9, r = 5 + rnd()*7;
+  addMountain(baseLon + (rnd()-.5)*0.25, baseLat + (rnd()-.5)*0.15, h, r, rnd()>.5?0x5c8f52:0x6fa35b);
+}
+scene.add(mountains);
+
+/* ---------- 動畫註冊表 ---------- */
+const anims = [];
+const onFrame = fn => anims.push(fn);
+
+/* ---------- 文字標籤（Sprite） ---------- */
+function makeLabel(text){
+  const cv = document.createElement("canvas");
+  cv.width = 512; cv.height = 128;
+  const g = cv.getContext("2d");
+  g.font = "bold 58px 'Noto Sans TC','Microsoft JhengHei',sans-serif";
+  const tw = g.measureText(text).width;
+  const bw = tw + 70;
+  g.fillStyle = "rgba(10,25,40,.78)";
+  const rx = (512-bw)/2;
+  g.beginPath(); g.roundRect ? g.roundRect(rx, 18, bw, 92, 24) : g.rect(rx,18,bw,92); g.fill();
+  g.strokeStyle = "rgba(120,220,230,.7)"; g.lineWidth = 4; g.stroke();
+  g.fillStyle = "#ffffff"; g.textAlign="center"; g.textBaseline="middle";
+  g.fillText(text, 256, 66);
+  const tex = new THREE.CanvasTexture(cv);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
+  sp.scale.set(30, 7.5, 1);
+  sp.renderOrder = 999;
+  return sp;
+}
+
+/* =========================================================
+   22 縣市地景模型
+   ========================================================= */
+function padDisc(r, c=0x8fbf72){ // 地景基座
+  const d = cyl(r, r*1.15, 1.4, c, 14);
+  d.position.y = 0.7;
+  return d;
+}
+
+const builders = {
+
+  taipei101(){ // 台北101
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0x9aa9b2));
+    for(let i=0;i<8;i++){
+      const s = 3.4 - i*0.12;
+      const seg = box(s, 2.1, s, 0x3f8f86, { metalness:.5, roughness:.3 });
+      seg.position.y = 2.2 + i*2.1;
+      seg.rotation.y = 0.06;
+      g.add(seg);
+    }
+    const top = box(2.2, 2, 2.2, 0x4aa79b, { metalness:.5, roughness:.3 }); top.position.y = 19.6; g.add(top);
+    const spire = cyl(0.12, 0.3, 5, 0xd8e6ea, 6); spire.position.y = 23; g.add(spire);
+    for(let i=0;i<7;i++){ // 周邊市區
+      const h = 2 + rnd()*4;
+      const b = box(1.6+rnd(), h, 1.6+rnd(), [0xb8c4cc,0x9fb2bd,0xcdd8de][i%3]);
+      const a = i/7*Math.PI*2;
+      b.position.set(Math.cos(a)*7.5, 1.4+h/2, Math.sin(a)*7.5);
+      g.add(b);
+    }
+    return g;
+  },
+
+  queenshead(){ // 野柳女王頭
+    const g = new THREE.Group();
+    g.add(padDisc(8, 0xd9c391));
+    const neck = cyl(0.9, 1.8, 5, 0xcaa96b, 9); neck.position.y = 3.9; g.add(neck);
+    const head = ball(2.6, 0xd4b478, 8); head.scale.set(1.15, 0.85, 1); head.position.set(0.7, 7.2, 0); g.add(head);
+    const bun = ball(1.2, 0xc9a768, 7); bun.position.set(-0.9, 8.4, 0); g.add(bun);
+    for(let i=0;i<4;i++){ // 蕈狀岩群
+      const r1 = cyl(0.5,0.9,2.2,0xcaa96b,7); r1.position.set(-4+i*2.6, 2.5, 3.2 - (i%2)*6);
+      const r2 = ball(1.1, 0xd4b478, 7); r2.scale.y=.7; r2.position.set(-4+i*2.6, 3.9, 3.2 - (i%2)*6);
+      g.add(r1, r2);
+    }
+    return g;
+  },
+
+  keelung(){ // 基隆港
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0x9aa9b2));
+    const dock = box(16, 1.2, 6, 0x8b9aa4); dock.position.set(0, 1.8, -2); g.add(dock);
+    // 貨櫃橋式起重機
+    for(const dx of [-4, 3]){
+      const leg1 = box(.5,6,.5,0xe07840), leg2 = box(.5,6,.5,0xe07840);
+      leg1.position.set(dx-1.4, 5.4, -2); leg2.position.set(dx+1.4, 5.4, -2);
+      const arm = box(.6,.6,9,0xe07840); arm.position.set(dx, 8.4, 0);
+      g.add(leg1, leg2, arm);
+    }
+    // 貨輪
+    const hull = box(9, 1.6, 3, 0x33475c); hull.position.set(0, 1.6, 5);
+    const bri  = box(1.6, 2.2, 2.2, 0xe8eef2); bri.position.set(-3.2, 3.4, 5);
+    g.add(hull, bri);
+    for(let i=0;i<4;i++){
+      const c = box(1.6,1,1.4,[0xd9534f,0x5bc0de,0xf0ad4e,0x5cb85c][i]);
+      c.position.set(-0.6+i*1.7, 2.9, 5); g.add(c);
+    }
+    onFrame(t=>{ hull.position.x = Math.sin(t*0.3)*0.6; bri.position.x = -3.2 + Math.sin(t*0.3)*0.6; });
+    return g;
+  },
+
+  airport(){ // 桃園國際機場
+    const g = new THREE.Group();
+    g.add(padDisc(13, 0x9fae87));
+    const rw = box(22, .5, 4.5, 0x5a6772); rw.position.y = 1.5; g.add(rw);
+    for(let i=0;i<5;i++){ const s = box(2,.06,.5,0xf2f2f2); s.position.set(-8+i*4, 1.8, 0); g.add(s); }
+    const tw = cyl(1,1.3,7,0xd8e2e8,8); tw.position.set(0,5,-6.5);
+    const twTop = cyl(1.9,1.4,1.8,0x4aa3c7,8,{metalness:.4,roughness:.3}); twTop.position.set(0,8.8,-6.5);
+    g.add(tw, twTop);
+    // 飛機（環繞飛行）
+    const plane = new THREE.Group();
+    const body = cyl(.5,.5,6,0xf5f8fa,8); body.rotation.z = Math.PI/2;
+    const nose = ball(.5,0xf5f8fa,8); nose.position.x = 3;
+    const wing = box(1.2,.15,7,0xd0dbe2); const tail = box(1,.15,2.4,0xd0dbe2); tail.position.set(-2.6,.7,0);
+    const fin  = box(.9,1.4,.15,0x2a7fb5); fin.position.set(-2.8,.8,0);
+    plane.add(body,nose,wing,tail,fin);
+    g.add(plane);
+    onFrame(t=>{
+      const a = t*0.5;
+      plane.position.set(Math.cos(a)*20, 15+Math.sin(t*0.8)*1.2, Math.sin(a)*20);
+      plane.rotation.y = -a - Math.PI/2 + Math.PI;
+    });
+    return g;
+  },
+
+  hsinchuPark(){ // 新竹科學園區
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0x9db6a0));
+    const fab = box(9, 4, 6, 0xdde6ea, {metalness:.2, roughness:.4}); fab.position.y = 3.4; g.add(fab);
+    const strip = box(9.1, .8, 6.1, 0x2a7fb5); strip.position.y = 4.6; g.add(strip);
+    // 巨大矽晶圓
+    const wafer = cyl(4, 4, .35, 0xb9c6cf, 32, {metalness:.85, roughness:.15});
+    wafer.rotation.x = Math.PI/2;
+    wafer.position.set(0, 9.5, 0);
+    g.add(wafer);
+    const chip = box(1.4,.4,1.4,0x2f3d47,{metalness:.6,roughness:.3}); chip.position.set(0,9.5,0); g.add(chip);
+    onFrame(t=>{ wafer.rotation.z = t*0.4; });
+    return g;
+  },
+
+  smangus(){ // 新竹縣 司馬庫斯神木
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0x4f7d47));
+    const trunk = cyl(1.2, 2.2, 9, 0x6d4c33, 9); trunk.position.y = 5.2; g.add(trunk);
+    for(let i=0;i<3;i++){
+      const c = cone(5.5-i*1.4, 4.5, 0x2f6e3b, 8);
+      c.position.y = 9 + i*2.8;
+      g.add(c);
+    }
+    for(let i=0;i<5;i++){
+      const a = i/5*Math.PI*2 + .5;
+      const t2 = cyl(.3,.5,3,0x7a5a3d,7); t2.position.set(Math.cos(a)*6.5, 2.8, Math.sin(a)*6.5);
+      const c2 = cone(1.7, 3.4, 0x3f8a4c, 7); c2.position.set(Math.cos(a)*6.5, 5.8, Math.sin(a)*6.5);
+      g.add(t2, c2);
+    }
+    return g;
+  },
+
+  longteng(){ // 苗栗 龍騰斷橋
+    const g = new THREE.Group();
+    g.add(padDisc(11, 0x87a86a));
+    for(let i=0;i<4;i++){
+      const pier = box(2.4, 7 - (i===3?2.5:0), 2.4, 0xa4502e);
+      pier.position.set(-7.5+i*5, (7-(i===3?2.5:0))/2 + 1.4, 0);
+      g.add(pier);
+      if(i<2){ // 拱圈
+        const arch = mesh(new THREE.TorusGeometry(2.5, .7, 8, 12, Math.PI), 0xb05a34);
+        arch.position.set(-5+i*5, 8.2, 0);
+        g.add(arch);
+      }
+    }
+    return g;
+  },
+
+  gaomei(){ // 台中 高美濕地風車
+    const g = new THREE.Group();
+    g.add(padDisc(12, 0xc9b98a));
+    const water = cyl(11, 11, .3, 0x5fb4d4, 18, {transparent:true, opacity:.75, metalness:.3, roughness:.3});
+    water.position.y = 1.55; g.add(water);
+    const walk = box(16, .5, 1.6, 0x8a6f4d); walk.position.y = 2.1; g.add(walk);
+    for(const dx of [-6, 0, 6]){
+      const pole = cyl(.35,.5,11,0xf0f4f6,8); pole.position.set(dx, 7, -3);
+      g.add(pole);
+      const hub = new THREE.Group();
+      hub.position.set(dx, 12.4, -2.6);
+      for(let b=0;b<3;b++){
+        const blade = box(.5, 5.5, .18, 0xffffff);
+        blade.position.y = 2.75;
+        const holder = new THREE.Group();
+        holder.rotation.z = b*Math.PI*2/3;
+        holder.add(blade); hub.add(holder);
+      }
+      g.add(hub);
+      onFrame((t,dt)=>{ hub.rotation.z += dt*1.4; });
+    }
+    return g;
+  },
+
+  bagua(){ // 彰化 八卦山大佛
+    const g = new THREE.Group();
+    g.add(padDisc(9, 0x8fae72));
+    const base = cyl(4.5, 5.5, 1.6, 0xd8d3c5, 12); base.position.y = 2.1; g.add(base);
+    const lotus = cyl(3.6, 4.4, 1, 0xc9c2ae, 12); lotus.position.y = 3.3; g.add(lotus);
+    const bodyB = ball(3, 0x4a4f45, 10); bodyB.scale.set(1, 1.25, .85); bodyB.position.y = 6.8; g.add(bodyB);
+    const head = ball(1.7, 0x53584d, 10); head.position.y = 10.6; g.add(head);
+    const bun2 = ball(.7, 0x43473e, 8); bun2.position.y = 12.1; g.add(bun2);
+    for(const s of [-1,1]){
+      const ear = ball(.5, 0x53584d, 7); ear.scale.y = 1.6; ear.position.set(s*1.7, 10.3, 0); g.add(ear);
+    }
+    return g;
+  },
+
+  sunmoon(){ // 南投 日月潭
+    const g = new THREE.Group();
+    const lake = cyl(12, 13, 1.2, 0x2f8fbf, 24, {metalness:.3, roughness:.25});
+    lake.position.y = .8; g.add(lake);
+    const lalu = cyl(1.6, 2.2, 1.6, 0x6f9a5b, 9); lalu.position.set(1.5, 1.9, 1); g.add(lalu);
+    const tree = cone(1, 2, 0x3f7d47, 7); tree.position.set(1.5, 3.4, 1); g.add(tree);
+    // 慈恩塔
+    const pag = new THREE.Group();
+    for(let i=0;i<5;i++){
+      const t2 = cyl(1.3-i*.16, 1.4-i*.16, 1.1, 0xc8b28a, 8); t2.position.y = i*1.15+.6;
+      const roof = cone(1.6-i*.16, .5, 0x8a4a3a, 8); roof.position.y = i*1.15+1.35;
+      pag.add(t2, roof);
+    }
+    pag.position.set(-8.5, 1.4, 6);
+    g.add(pag);
+    // 遊艇
+    const boat = new THREE.Group();
+    const bh = box(3,.8,1.3,0xf4f7f9); const bc = box(1.8,.8,1,0x3fa8c9); bc.position.y=.8;
+    boat.add(bh,bc); boat.position.y = 1.7;
+    g.add(boat);
+    onFrame(t=>{
+      const a = t*0.35;
+      boat.position.x = Math.cos(a)*6; boat.position.z = Math.sin(a)*6;
+      boat.rotation.y = -a;
+    });
+    return g;
+  },
+
+  beigang(){ // 雲林 北港朝天宮
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0xa8b287));
+    const hall = box(10, 4, 6, 0xb43a2e); hall.position.y = 3.4; g.add(hall);
+    const roof1 = cone(7.4, 2.6, 0xd9822b, 4); roof1.rotation.y = Math.PI/4; roof1.scale.z = .62; roof1.position.y = 6.6; g.add(roof1);
+    const hall2 = box(6, 2.6, 4, 0xa63428); hall2.position.y = 9; g.add(hall2);
+    const roof2 = cone(5, 2.2, 0xe08a2e, 4); roof2.rotation.y = Math.PI/4; roof2.scale.z = .62; roof2.position.y = 11.4; g.add(roof2);
+    for(const s of [-1,1]){ // 燕尾脊
+      const tip = cone(.5, 1.6, 0xd9822b, 6); tip.rotation.z = s*-.9; tip.position.set(s*4.4, 7.4, 0); g.add(tip);
+      const p = cyl(.35,.35,4,0xc9483a,8); p.position.set(s*4.2, 3.2, 3.2); g.add(p);
+    }
+    return g;
+  },
+
+  alishan(){ // 嘉義縣 阿里山
+    const g = new THREE.Group();
+    g.add(padDisc(12, 0x3f6e42));
+    const spots = [[-5,2],[5,-1],[0,-5],[-3,-3],[6,4],[2,5]];
+    spots.forEach(([dx,dz],i)=>{
+      const h = 6+ (i%3)*2;
+      const tr = cyl(.4,.7,h,0x6d4c33,7); tr.position.set(dx, h/2+1.4, dz);
+      const cn = cone(2.2, 5, 0x2c5f38, 8); cn.position.set(dx, h+3, dz);
+      g.add(tr, cn);
+    });
+    // 神木
+    const bigT = cyl(1.1,1.8,10,0x5d3f2a,9); bigT.position.set(0,6.4,0);
+    const bigC = cone(3.4,6,0x35704a,8); bigC.position.set(0,13.5,0);
+    g.add(bigT, bigC);
+    // 小火車
+    const train = new THREE.Group();
+    for(let i=0;i<3;i++){
+      const car = box(2,1.3,1.2, i===0?0xc23b2e:0xd9534f);
+      car.position.x = -i*2.3; train.add(car);
+      if(i===0){ const chim = cyl(.2,.3,.8,0x333333,7); chim.position.set(.6,.95,0); train.add(chim); }
+    }
+    g.add(train);
+    onFrame(t=>{
+      const a = -t*0.5;
+      train.position.set(Math.cos(a)*9, 2.2, Math.sin(a)*9);
+      train.rotation.y = -a + Math.PI/2;
+    });
+    return g;
+  },
+
+  sunshoot(){ // 嘉義市 射日塔
+    const g = new THREE.Group();
+    g.add(padDisc(8, 0x9db98a));
+    const tower = cyl(1.8, 2.4, 14, 0xa8763e, 10, {metalness:.45, roughness:.4}); tower.position.y = 8.4; g.add(tower);
+    const slit = box(.7, 12, .4, 0x2f3a42); slit.position.set(0, 8.4, 2.1); g.add(slit);
+    const cap = cyl(2.6, 2, 1.4, 0x8a5f30, 10, {metalness:.5,roughness:.35}); cap.position.y = 16.1; g.add(cap);
+    const needle = cyl(.1,.25,3.2,0xd8c49a,6); needle.position.y = 19; g.add(needle);
+    return g;
+  },
+
+  chihkan(){ // 台南 赤崁樓
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0xa8b287));
+    const base = box(12, 2.4, 8, 0xd9d2c0); base.position.y = 2.6; g.add(base);
+    const f1 = box(8.5, 2.6, 5.5, 0xc23b2e); f1.position.y = 5.1; g.add(f1);
+    const r1 = cone(6.4, 1.8, 0x7d4335, 4); r1.rotation.y=Math.PI/4; r1.scale.z=.66; r1.position.y = 7.3; g.add(r1);
+    const f2 = box(6, 2.4, 4, 0xb43a2e); f2.position.y = 9; g.add(f2);
+    const r2 = cone(4.8, 1.8, 0x8a4a3a, 4); r2.rotation.y=Math.PI/4; r2.scale.z=.66; r2.position.y = 11; g.add(r2);
+    for(const s of [-1,1]){
+      const tip = cone(.4,1.2,0xd9822b,6); tip.rotation.z = s*-.85; tip.position.set(s*3.2, 11.6, 0); g.add(tip);
+    }
+    return g;
+  },
+
+  kh85(){ // 高雄 85大樓
+    const g = new THREE.Group();
+    g.add(padDisc(10, 0x9aa9b2));
+    for(const s of [-1,1]){
+      const leg = box(3, 10, 4.5, 0x6f8fa5, {metalness:.5, roughness:.3});
+      leg.position.set(s*2.6, 6.4, 0); g.add(leg);
+    }
+    const mid = box(8.2, 2, 4.5, 0x7fa0b5, {metalness:.5,roughness:.3}); mid.position.y = 12.4; g.add(mid);
+    const up = box(3.4, 9, 4, 0x6f8fa5, {metalness:.5,roughness:.3}); up.position.y = 17.9; g.add(up);
+    const tip2 = cyl(.15,.3,4.5,0xd8e6ea,6); tip2.position.y = 24.6; g.add(tip2);
+    for(let i=0;i<6;i++){
+      const h = 2+rnd()*3.5;
+      const b = box(1.5+rnd(), h, 1.5+rnd(), [0xb8c4cc,0xcdd8de][i%2]);
+      const a = i/6*Math.PI*2+.4;
+      b.position.set(Math.cos(a)*7.5, 1.4+h/2, Math.sin(a)*7.5);
+      g.add(b);
+    }
+    return g;
+  },
+
+  eluanbi(){ // 屏東 鵝鑾鼻燈塔
+    const g = new THREE.Group();
+    g.add(padDisc(9, 0x8fbf72));
+    const t = cyl(1.5, 2, 9, 0xf5f8fa, 12); t.position.y = 5.9; g.add(t);
+    const gal = cyl(2.2, 2.2, .5, 0xf0f3f5, 12); gal.position.y = 10.6; g.add(gal);
+    const lamp = cyl(1.2, 1.2, 1.6, 0x333f47, 10); lamp.position.y = 11.6; g.add(lamp);
+    const dome = ball(1.2, 0xe8eef1, 10); dome.scale.y=.7; dome.position.y = 12.6; g.add(dome);
+    const glow = ball(.7, 0xfff3b0, 8, {emissive:0xffd166, emissiveIntensity:2, roughness:.2}); glow.position.y = 11.6; g.add(glow);
+    // 旋轉光束
+    const beam = mesh(new THREE.ConeGeometry(3.5, 16, 12, 1, true), 0xfff2c0,
+      {transparent:true, opacity:.28, emissive:0xffe9a0, emissiveIntensity:1, side:THREE.DoubleSide, depthWrite:false});
+    beam.rotation.z = Math.PI/2;
+    const beamG = new THREE.Group();
+    beam.position.x = 8;
+    beamG.add(beam);
+    beamG.position.y = 11.6;
+    g.add(beamG);
+    onFrame((t2,dt)=>{ beamG.rotation.y += dt*0.9; });
+    // 白色圍牆
+    const wall = mesh(new THREE.TorusGeometry(6.5,.3,6,20), 0xf5f8fa); wall.rotation.x = Math.PI/2; wall.position.y=1.7; g.add(wall);
+    return g;
+  },
+
+  guishan(){ // 宜蘭 龜山島（海上）
+    const g = new THREE.Group();
+    const bodyI = ball(6, 0x4f7d47, 9); bodyI.scale.set(1.5,.62,1); bodyI.position.y = .8; g.add(bodyI);
+    const shell = ball(4.5, 0x3f6e42, 8); shell.scale.set(1.2,.72,.95); shell.position.set(-1,2,0); g.add(shell);
+    const headI = ball(2.2, 0x557f4a, 8); headI.scale.set(1.35,.8,.9); headI.position.set(8.3,.9,0); g.add(headI);
+    // 牛奶海（硫磺湧泉）
+    const milk = cyl(3.4,3.4,.15,0xbfe8e2,14,{transparent:true,opacity:.8}); milk.position.set(11.5,SEA_Y*0+.35,1.5); g.add(milk);
+    return g;
+  },
+
+  taroko(){ // 花蓮 太魯閣
+    const g = new THREE.Group();
+    g.add(padDisc(12, 0x8f9a8a));
+    for(const s of [-1,1]){ // 大理石峽谷兩壁
+      const cliff = box(4.5, 12, 14, 0xb9beb9);
+      cliff.position.set(s*4.6, 7.4, 0);
+      cliff.rotation.y = s*.06;
+      g.add(cliff);
+      const strata = box(4.6, 1, 14.1, 0x8f9691); strata.position.set(s*4.6, 9.5, 0); g.add(strata);
+    }
+    const river = box(3.6, .3, 14, 0x57c2c9, {metalness:.3, roughness:.2, transparent:true, opacity:.9});
+    river.position.y = 1.6; g.add(river);
+    // 紅橋
+    const bridge = box(5.5, .4, 1.6, 0xc23b2e); bridge.position.set(0, 6, 4); g.add(bridge);
+    const archB = mesh(new THREE.TorusGeometry(2.6,.22,8,14,Math.PI), 0xc23b2e); archB.position.set(0,6.2,4); archB.rotation.y = 0; g.add(archB);
+    onFrame(t=>{ river.material.opacity = .75 + Math.sin(t*2)*.15; });
+    return g;
+  },
+
+  balloon(){ // 台東 熱氣球嘉年華
+    const g = new THREE.Group();
+    g.add(padDisc(11, 0x7fb35c));
+    const hill = cyl(9, 11, 2.2, 0x6fa35b, 12); hill.position.y = 1.8; g.add(hill);
+    const cols = [[0xe4572e,0xffc914],[0x29a0b1,0xf5f8fa],[0x8f3985,0xffd166]];
+    cols.forEach((cc,i)=>{
+      const bg = new THREE.Group();
+      const env = ball(3, cc[0], 12); env.scale.y = 1.15; bg.add(env);
+      const stripe = mesh(new THREE.TorusGeometry(2.95,.35,8,18), cc[1]); stripe.rotation.x = Math.PI/2; stripe.position.y=.4; bg.add(stripe);
+      const bottom = cone(1.1, 1.6, cc[0], 9); bottom.rotation.x = Math.PI; bottom.position.y = -3.4; bg.add(bottom);
+      const basket = box(1.1,.9,1.1,0x8a6f4d); basket.position.y = -4.8; bg.add(basket);
+      const px = [-6, 0, 6][i], pz = [2, -3, 3][i], ph = [13, 17, 15][i];
+      bg.position.set(px, ph, pz);
+      g.add(bg);
+      onFrame(t=>{ bg.position.y = ph + Math.sin(t*.7 + i*2.1)*1.6; bg.rotation.y = Math.sin(t*.3+i)*.3; });
+    });
+    return g;
+  },
+
+  penghu(){ // 澎湖 雙心石滬（海上）
+    const g = new THREE.Group();
+    const isle = cyl(9, 12, 2.4, 0xd9c391, 14); isle.position.y = .6; g.add(isle);
+    const grass = cyl(6.5, 8, 1, 0x8fbf72, 12); grass.position.y = 2; g.add(grass);
+    const shallow = cyl(13, 14, .2, 0x7fd4d4, 20, {transparent:true, opacity:.55}); shallow.position.set(6, 1.35, 6); g.add(shallow);
+    // 雙心
+    function heart(){
+      const s = new THREE.Shape();
+      s.moveTo(0, 0);
+      s.bezierCurveTo(0,-1.5, -2.5,-1.5, -2.5,0);
+      s.bezierCurveTo(-2.5,1.6, 0,2, 0,3.6);
+      s.bezierCurveTo(0,2, 2.5,1.6, 2.5,0);
+      s.bezierCurveTo(2.5,-1.5, 0,-1.5, 0,0);
+      const holePts = new THREE.Path();
+      const geo = new THREE.ExtrudeGeometry(s, {depth:.5, bevelEnabled:false});
+      geo.rotateX(Math.PI/2);
+      const m = mesh(geo, 0x5a5f52);
+      return m;
+    }
+    const h1 = heart(); h1.position.set(6.5, 1.7, 7.5); h1.rotation.y = 2.6; h1.scale.set(1.3,1,1.3);
+    const h2 = heart(); h2.position.set(9.5, 1.7, 4.6); h2.rotation.y = 2.6-Math.PI*0.95; h2.scale.set(1.3,1,1.3);
+    g.add(h1, h2);
+    return g;
+  },
+
+  kinmen(){ // 金門 莒光樓（海上島）
+    const g = new THREE.Group();
+    const isle = cyl(11, 14, 2.4, 0xb9a878, 14); isle.position.y = .6; g.add(isle);
+    const grass = cyl(9, 10.5, .8, 0x9db06a, 12); grass.position.y = 2; g.add(grass);
+    const baseT = box(9, 1.4, 7, 0xd9d2c0); baseT.position.y = 3.1; g.add(baseT);
+    let w = 7.5;
+    for(let i=0;i<3;i++){
+      const f = box(w, 2.2, w*.7, 0xc23b2e); f.position.y = 4.9 + i*3.1; g.add(f);
+      const r = cone(w*.78, 1.5, 0xe8b93e, 4); r.rotation.y = Math.PI/4; r.scale.z = .7;
+      r.position.y = 6.5 + i*3.1; g.add(r);
+      w -= 1.9;
+    }
+    return g;
+  },
+
+  matsu(){ // 連江 馬祖藍眼淚（海上島）
+    const g = new THREE.Group();
+    const isle = ball(7, 0x6b7d5a, 9); isle.scale.set(1.4,.55,1); isle.position.y = .5; g.add(isle);
+    const isle2 = ball(4, 0x5f7350, 8); isle2.scale.set(1.2,.6,1); isle2.position.set(9,.4,4); g.add(isle2);
+    const fort = box(2.4,1.8,2.4,0xb9beb9); fort.position.set(0,4.2,0); g.add(fort);
+    const fr = cone(2, 1.2, 0x8a4a3a, 4); fr.rotation.y=Math.PI/4; fr.position.set(0,5.7,0); g.add(fr);
+    // 藍眼淚光圈
+    const tears = mesh(new THREE.TorusGeometry(11,.7,8,36), 0x39c6f0,
+      {emissive:0x39c6f0, emissiveIntensity:2, transparent:true, opacity:.7, roughness:.2});
+    tears.rotation.x = Math.PI/2;
+    tears.position.y = .35;
+    g.add(tears);
+    onFrame(t=>{
+      const p = (Math.sin(t*1.5)+1)/2;
+      tears.material.opacity = .3 + p*.55;
+      tears.material.emissiveIntensity = 1 + p*2.2;
+      tears.scale.setScalar(1 + Math.sin(t*.8)*.06);
+    });
+    return g;
+  }
+};
+
+/* ---------- 地景資料 ---------- */
+const LANDMARKS = [
+  { id:"keelung",   county:"基隆市", name:"基隆港",        lat:25.135, lon:121.745, build:"keelung",   dist:42,
+    desc:"台灣北部重要的國際商港，橋式起重機與往來貨輪是港都最鮮明的風景，鄰近廟口夜市美食聞名全台。" },
+  { id:"taipei101", county:"台北市", name:"台北101",       lat:25.034, lon:121.565, build:"taipei101", dist:55,
+    desc:"樓高 508 公尺、共 101 層，曾是世界第一高樓。竹節造型象徵節節高升，是台北最具代表性的地標。" },
+  { id:"queenshead",county:"新北市", name:"野柳女王頭",    lat:25.206, lon:121.690, build:"queenshead",dist:38,
+    desc:"歷經千萬年海水侵蝕與地殼抬升形成的蕈狀岩，因側面神似女王頭像而得名，是世界級的地質奇景。" },
+  { id:"airport",   county:"桃園市", name:"桃園國際機場",  lat:25.08,  lon:121.23,  build:"airport",   dist:55,
+    desc:"台灣最大的國際機場，是連接世界的空中門戶，每年服務數千萬名旅客進出台灣。" },
+  { id:"hsinchu",   county:"新竹市", name:"新竹科學園區",  lat:24.78,  lon:120.99,  build:"hsinchuPark",dist:42,
+    desc:"台灣半導體產業的心臟，被譽為「台灣矽谷」，這裡生產的晶片驅動著全世界的電子產品。" },
+  { id:"smangus",   county:"新竹縣", name:"司馬庫斯神木群",lat:24.58,  lon:121.30,  build:"smangus",   dist:45,
+    desc:"深山中的泰雅族部落，擁有巨大的紅檜神木群，被稱為「上帝的部落」，最老的神木超過兩千歲。" },
+  { id:"longteng",  county:"苗栗縣", name:"龍騰斷橋",      lat:24.35,  lon:120.77,  build:"longteng",  dist:40,
+    desc:"舊山線鐵路的紅磚拱橋，1935 年大地震中斷裂，殘存的橋墩訴說著百年鐵道歷史，被譽為台灣鐵道藝術極品。" },
+  { id:"gaomei",    county:"台中市", name:"高美濕地",      lat:24.31,  lon:120.55,  build:"gaomei",    dist:50,
+    desc:"廣闊的潮間帶濕地與整排白色風力發電機，夕陽時分天空與水面連成一片金黃，是著名的生態與夕照勝地。" },
+  { id:"bagua",     county:"彰化縣", name:"八卦山大佛",    lat:24.08,  lon:120.57,  build:"bagua",     dist:42,
+    desc:"高約 22 公尺的黑色大佛端坐山頭，曾是亞洲最大佛像，從佛前平台可眺望整個彰化平原。" },
+  { id:"sunmoon",   county:"南投縣", name:"日月潭",        lat:23.86,  lon:120.92,  build:"sunmoon",   dist:55,
+    desc:"台灣最大的天然湖泊，北半部形如日輪、南半部狀如月鉤。湖中拉魯島是邵族的聖地，環湖山水如畫。" },
+  { id:"beigang",   county:"雲林縣", name:"北港朝天宮",    lat:23.57,  lon:120.30,  build:"beigang",   dist:42,
+    desc:"三百多年歷史的媽祖廟，是全台媽祖信仰的重鎮，燕尾屋脊與精緻剪黏工藝展現傳統廟宇之美。" },
+  { id:"alishan",   county:"嘉義縣", name:"阿里山",        lat:23.51,  lon:120.80,  build:"alishan",   dist:55,
+    desc:"以日出、雲海、晚霞、森林與高山鐵路「五奇」聞名，紅色小火車穿梭於千年檜木巨木群之間。" },
+  { id:"sunshoot",  county:"嘉義市", name:"射日塔",        lat:23.48,  lon:120.46,  build:"sunshoot",  dist:42,
+    desc:"位於嘉義公園、高 62 公尺的褐色高塔，造型取自阿里山神木，塔身中央的「一線天」雕刻著鄒族射日神話。" },
+  { id:"chihkan",   county:"台南市", name:"赤崁樓",        lat:23.00,  lon:120.20,  build:"chihkan",   dist:42,
+    desc:"1653 年荷蘭人建造的「普羅民遮城」，後改建為中式樓閣，紅瓦飛簷見證台南四百年的歷史變遷。" },
+  { id:"kh85",      county:"高雄市", name:"高雄85大樓",    lat:22.61,  lon:120.30,  build:"kh85",      dist:55,
+    desc:"樓高 378 公尺的摩天大樓，外型如同「高」字橫跨兩座塔樓，緊鄰高雄港，是港都天際線的主角。" },
+  { id:"eluanbi",   county:"屏東縣", name:"鵝鑾鼻燈塔",    lat:21.90,  lon:120.85,  build:"eluanbi",   dist:42,
+    desc:"台灣最南端的白色燈塔，光力全台最強，有「東亞之光」美稱，守護巴士海峽的船隻超過一百年。" },
+  { id:"balloon",   county:"台東縣", name:"鹿野高台熱氣球",lat:22.91,  lon:121.12,  build:"balloon",   dist:55,
+    desc:"每年夏天舉辦國際熱氣球嘉年華，五彩繽紛的熱氣球從綠色高台升空，飄浮在花東縱谷的藍天之上。" },
+  { id:"taroko",    county:"花蓮縣", name:"太魯閣峽谷",    lat:24.16,  lon:121.62,  build:"taroko",    dist:52,
+    desc:"立霧溪切穿大理石岩層形成的壯麗峽谷，兩岸絕壁近乎垂直，是世界罕見的大理岩峽谷地形。" },
+  { id:"guishan",   county:"宜蘭縣", name:"龜山島",        lat:24.84,  lon:121.94,  build:"guishan",   dist:50, sea:true,
+    desc:"外形酷似浮龜的火山島，是宜蘭的精神象徵。島旁海底溫泉湧出，把海水染成夢幻的「牛奶海」。" },
+  { id:"penghu",    county:"澎湖縣", name:"七美雙心石滬",  lat:23.24,  lon:119.66,  build:"penghu",    dist:48, sea:true,
+    desc:"先民以玄武岩與珊瑚礁在潮間帶堆砌的捕魚陷阱，兩顆心相連的造型浪漫動人，是澎湖最經典的意象。" },
+  { id:"kinmen",    county:"金門縣", name:"莒光樓",        lat:24.43,  lon:118.37,  build:"kinmen",    dist:48, sea:true,
+    desc:"1952 年建造的三層仿古樓閣，紅柱金瓦氣勢恢弘，曾多次登上郵票，是金門最著名的地標。" },
+  { id:"matsu",     county:"連江縣", name:"馬祖藍眼淚",    lat:26.16,  lon:119.93,  build:"matsu",     dist:50, sea:true,
+    desc:"春夏夜晚海面會發出夢幻藍光，這是夜光蟲受海浪擾動發光的自然奇觀，被 CNN 列為世界奇景之一。" }
+];
+
+/* ---------- 放置地景 ---------- */
+const landmarkGroup = new THREE.Group();
+scene.add(landmarkGroup);
+LANDMARKS.forEach(lm=>{
+  const g = builders[lm.build]();
+  const y = lm.sea ? SEA_Y : GROUND_Y;
+  g.position.set(X(lm.lon), y, Z(lm.lat));
+  g.userData.landmark = lm;
+  lm.pos = new THREE.Vector3(X(lm.lon), y, Z(lm.lat));
+  lm.group = g;
+  const label = makeLabel(lm.name);
+  const bb = new THREE.Box3().setFromObject(g);
+  label.position.set(0, (bb.max.y - y) + 8, 0);
+  g.add(label);
+  lm.label = label;
+  landmarkGroup.add(g);
+});
+
+/* ---------- 選取光環 ---------- */
+const ring = mesh(new THREE.TorusGeometry(14, .5, 8, 40), 0xffd166,
+  {emissive:0xffd166, emissiveIntensity:1.5, transparent:true, opacity:.9});
+ring.rotation.x = Math.PI/2;
+ring.visible = false;
+scene.add(ring);
+onFrame((t,dt)=>{
+  if(ring.visible){ ring.rotation.z += dt*.8; const s = 1+Math.sin(t*2.5)*.06; ring.scale.set(s,s,1); }
+});
+
+/* =========================================================
+   無人機飛行控制
+   ========================================================= */
+const drone = {
+  yaw: Math.PI,        // 面向北（-z）→ yaw 使 forward = -z
+  pitch: -0.55,
+  speedMul: 1,
+  keys: {},
+  vel: new THREE.Vector3()
+};
+// 初始視角：面向島嶼
+camera.position.set(30, 270, 420);
+drone.yaw = 0; drone.pitch = -0.5;
+
+function forwardVec(){
+  return new THREE.Vector3(
+    Math.sin(drone.yaw)*Math.cos(drone.pitch),
+    Math.sin(drone.pitch),
+    Math.cos(drone.yaw)*Math.cos(drone.pitch)
+  ).negate(); // yaw=PI 時 forward ≈ (0,?,-1)... 直接用 -Z 慣例
+}
+function applyCam(){
+  camera.rotation.order = "YXZ";
+  camera.rotation.y = drone.yaw;
+  camera.rotation.x = drone.pitch;
+}
+applyCam();
+
+/* --- 滑鼠拖曳視角 --- */
+let dragging = false, lastPX = 0, lastPY = 0;
+const cvs = renderer.domElement;
+
+/* --- 自動飛行狀態 --- */
+let flight = null;       // {from,to,fromLook,toLook,t,dur,after}
+let orbiting = null;     // {target, dist, angle, height}
+let orbitMode = false;
+let touring = false, tourIdx = 0, tourWait = 0;
+let activeLM = null;
+
+function stopAuto(){
+  flight = null; orbiting = null;
+  if(touring){ touring = false; updateTourBtn(); }
+}
+
+function lookDirToYawPitch(dir){
+  drone.pitch = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
+  drone.yaw = Math.atan2(-dir.x, -dir.z);
+}
+
+function flyTo(lm, after){
+  const target = lm.pos.clone();
+  const d = lm.dist || 45;
+  // 從目前位置方向接近
+  const horiz = camera.position.clone().sub(target); horiz.y = 0;
+  if(horiz.lengthSq() < 1) horiz.set(0.5, 0, 1);
+  horiz.normalize();
+  const end = target.clone().add(horiz.multiplyScalar(d)).add(new THREE.Vector3(0, d*.55, 0));
+  flight = {
+    from: camera.position.clone(),
+    to: end,
+    fromLook: camera.position.clone().add(getViewDir().multiplyScalar(60)),
+    toLook: target.clone().add(new THREE.Vector3(0, 6, 0)),
+    t: 0,
+    dur: Math.min(4, 1.2 + camera.position.distanceTo(end)/220),
+    lm, after
+  };
+  setActive(lm);
+}
+
+function getViewDir(){
+  const v = new THREE.Vector3(0,0,-1);
+  v.applyEuler(new THREE.Euler(drone.pitch, drone.yaw, 0, "YXZ"));
+  return v;
+}
+
+function setActive(lm){
+  activeLM = lm;
+  document.querySelectorAll(".item").forEach(el=>el.classList.toggle("active", el.dataset.id === (lm&&lm.id)));
+  if(lm){
+    ring.visible = true;
+    ring.position.set(lm.pos.x, lm.pos.y + 1.2, lm.pos.z);
+    document.getElementById("infoCounty").textContent = lm.county;
+    document.getElementById("infoName").textContent = lm.name;
+    document.getElementById("infoDesc").textContent = lm.desc;
+    document.getElementById("info").classList.add("show");
+  } else {
+    ring.visible = false;
+    document.getElementById("info").classList.remove("show");
+  }
+}
+
+/* =========================================================
+   輸入事件
+   ========================================================= */
+window.addEventListener("keydown", e=>{
+  drone.keys[e.code] = true;
+  if(["KeyW","KeyA","KeyS","KeyD","Space","ShiftLeft","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)){
+    stopAuto();
+    if(e.code==="Space") e.preventDefault();
+  }
+});
+window.addEventListener("keyup", e=>{ drone.keys[e.code] = false; });
+
+cvs.addEventListener("wheel", e=>{
+  e.preventDefault();
+  stopAuto();
+  const dir = getViewDir();
+  camera.position.addScaledVector(dir, -e.deltaY * 0.12 * drone.speedMul);
+  clampCam();
+}, {passive:false});
+
+/* --- Pointer：滑鼠拖曳 + 手機雙區觸控 --- */
+const touches = {};   // pointerId -> {mode:'look'|'move', x0,y0,x,y}
+const stickEl = document.getElementById("stick");
+const knobEl = document.getElementById("knob");
+let moveVec = {x:0, y:0};
+
+cvs.addEventListener("pointerdown", e=>{
+  cvs.setPointerCapture(e.pointerId);
+  if(e.pointerType === "touch" && e.clientX < W()*0.42){
+    touches[e.pointerId] = {mode:"move", x0:e.clientX, y0:e.clientY, x:e.clientX, y:e.clientY};
+    stickEl.style.display = "block";
+    stickEl.style.left = (e.clientX-55)+"px";
+    stickEl.style.top = (e.clientY-55)+"px";
+    stopAuto();
+  } else {
+    touches[e.pointerId] = {mode:"look", x:e.clientX, y:e.clientY};
+    dragging = true;
+  }
+});
+cvs.addEventListener("pointermove", e=>{
+  const t = touches[e.pointerId];
+  if(!t) return;
+  if(t.mode === "look"){
+    const dx = e.clientX - t.x, dy = e.clientY - t.y;
+    if(Math.abs(dx)+Math.abs(dy) > 1.5 && flight===null){ /* 拖曳中斷自動 */ }
+    if(Math.abs(dx)+Math.abs(dy) > 2) { stopAuto(); }
+    drone.yaw   -= dx * 0.0032;
+    drone.pitch -= dy * 0.0032;
+    drone.pitch = THREE.MathUtils.clamp(drone.pitch, -1.45, 1.45);
+    t.x = e.clientX; t.y = e.clientY;
+    applyCam();
+  } else {
+    const dx = e.clientX - t.x0, dy = e.clientY - t.y0;
+    const r = Math.min(1, Math.hypot(dx,dy)/48);
+    const a = Math.atan2(dy,dx);
+    moveVec.x = Math.cos(a)*r; moveVec.y = Math.sin(a)*r;
+    knobEl.style.transform = `translate(calc(-50% + ${Math.cos(a)*r*34}px), calc(-50% + ${Math.sin(a)*r*34}px))`;
+  }
+});
+function endPointer(e){
+  const t = touches[e.pointerId];
+  if(t && t.mode === "move"){
+    moveVec.x = moveVec.y = 0;
+    stickEl.style.display = "none";
+    knobEl.style.transform = "translate(-50%,-50%)";
+  }
+  delete touches[e.pointerId];
+  dragging = Object.values(touches).some(t=>t.mode==="look");
+}
+cvs.addEventListener("pointerup", endPointer);
+cvs.addEventListener("pointercancel", endPointer);
+
+/* --- 點擊地景（raycast） --- */
+const raycaster = new THREE.Raycaster();
+let downXY = null;
+cvs.addEventListener("pointerdown", e=>{ downXY = [e.clientX, e.clientY]; });
+cvs.addEventListener("pointerup", e=>{
+  if(!downXY) return;
+  const moved = Math.hypot(e.clientX-downXY[0], e.clientY-downXY[1]);
+  downXY = null;
+  if(moved > 6) return;
+  const ndc = new THREE.Vector2((e.clientX/W())*2-1, -(e.clientY/H())*2+1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(landmarkGroup.children, true);
+  if(hits.length){
+    let o = hits[0].object;
+    while(o && !o.userData.landmark) o = o.parent;
+    if(o) flyTo(o.userData.landmark, ()=>{ if(orbitMode) startOrbit(o.userData.landmark); });
+  }
+});
+
+/* --- 高度按鈕（手機） --- */
+let altDir = 0;
+for(const [id,d] of [["altUp",1],["altDown",-1]]){
+  const el = document.getElementById(id);
+  el.addEventListener("pointerdown", e=>{ e.preventDefault(); stopAuto(); altDir = d; });
+  el.addEventListener("pointerup", ()=>{ altDir = 0; });
+  el.addEventListener("pointercancel", ()=>{ altDir = 0; });
+}
+
+/* =========================================================
+   UI
+   ========================================================= */
+const listEl = document.getElementById("list");
+LANDMARKS.forEach(lm=>{
+  const div = document.createElement("div");
+  div.className = "item";
+  div.dataset.id = lm.id;
+  div.innerHTML = `<span class="county">${lm.county}</span><span>${lm.name}</span>`;
+  div.addEventListener("click", ()=>{
+    touring = false; updateTourBtn();
+    flyTo(lm, ()=>{ if(orbitMode) startOrbit(lm); });
+    if(W() <= 820) document.getElementById("panel").classList.add("hidden");
+  });
+  listEl.appendChild(div);
+});
+
+document.getElementById("panelToggle").addEventListener("click", ()=>{
+  document.getElementById("panel").classList.toggle("hidden");
+});
+if(W() <= 820) document.getElementById("panel").classList.add("hidden");
+
+document.getElementById("infoClose").addEventListener("click", ()=> setActive(null));
+
+document.getElementById("speed").addEventListener("input", e=>{ drone.speedMul = parseFloat(e.target.value); });
+
+const btnOrbit = document.getElementById("btnOrbit");
+btnOrbit.addEventListener("click", ()=>{
+  orbitMode = !orbitMode;
+  btnOrbit.classList.toggle("on", orbitMode);
+  if(orbitMode && activeLM){ startOrbit(activeLM); }
+  if(!orbitMode) orbiting = null;
+});
+
+const btnTour = document.getElementById("btnTour");
+function updateTourBtn(){ btnTour.textContent = touring ? "⏸️ 停止導覽" : "▶️ 自動導覽"; btnTour.classList.toggle("on", touring); }
+btnTour.addEventListener("click", ()=>{
+  touring = !touring;
+  updateTourBtn();
+  if(touring){
+    tourIdx = activeLM ? Math.max(0, LANDMARKS.indexOf(activeLM)) : 0;
+    tourGo();
+  } else { stopAuto(); }
+});
+function tourGo(){
+  if(!touring) return;
+  const lm = LANDMARKS[tourIdx % LANDMARKS.length];
+  flyTo(lm, ()=>{
+    startOrbit(lm);
+    tourWait = 7;   // 環繞 7 秒後前往下一站
+  });
+}
+
+document.getElementById("btnHome").addEventListener("click", ()=>{
+  stopAuto(); setActive(null);
+  flight = {
+    from: camera.position.clone(),
+    to: new THREE.Vector3(30, 270, 420),
+    fromLook: camera.position.clone().add(getViewDir().multiplyScalar(60)),
+    toLook: new THREE.Vector3(0, 0, -20),
+    t: 0, dur: 2.5
+  };
+});
+
+function startOrbit(lm){
+  const d = (lm.dist || 45);
+  const off = camera.position.clone().sub(lm.pos);
+  orbiting = {
+    target: lm.pos.clone().add(new THREE.Vector3(0,6,0)),
+    dist: Math.max(20, Math.hypot(off.x, off.z)),
+    height: Math.max(12, off.y),
+    angle: Math.atan2(off.z, off.x)
+  };
+}
+
+function clampCam(){
+  camera.position.y = THREE.MathUtils.clamp(camera.position.y, 4, 600);
+  camera.position.x = THREE.MathUtils.clamp(camera.position.x, -900, 900);
+  camera.position.z = THREE.MathUtils.clamp(camera.position.z, -900, 900);
+}
+
+/* =========================================================
+   主迴圈
+   ========================================================= */
+const clock = new THREE.Clock();
+const easeInOut = t => t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), .05);
+  const t = clock.elapsedTime;
+
+  anims.forEach(fn=>fn(t, dt));
+
+  // 海浪
+  for(let i=0;i<seaPos.count;i++){
+    const x = seaBase[i*3], y = seaBase[i*3+1];
+    seaPos.array[i*3+2] = Math.sin(x*.02 + t*1.2)*Math.cos(y*.025 + t*.9)*1.2;
+  }
+  seaPos.needsUpdate = true;
+
+  if(flight){
+    flight.t += dt / flight.dur;
+    const k = easeInOut(Math.min(1, flight.t));
+    camera.position.lerpVectors(flight.from, flight.to, k);
+    const look = new THREE.Vector3().lerpVectors(flight.fromLook, flight.toLook, k);
+    const dir = look.clone().sub(camera.position).normalize();
+    lookDirToYawPitch(dir);
+    applyCam();
+    if(flight.t >= 1){
+      const after = flight.after;
+      flight = null;
+      if(after) after();
+    }
+  } else if(orbiting){
+    orbiting.angle += dt * 0.28;
+    camera.position.set(
+      orbiting.target.x + Math.cos(orbiting.angle)*orbiting.dist,
+      orbiting.target.y + orbiting.height - 6,
+      orbiting.target.z + Math.sin(orbiting.angle)*orbiting.dist
+    );
+    const dir = orbiting.target.clone().sub(camera.position).normalize();
+    lookDirToYawPitch(dir);
+    applyCam();
+    if(touring){
+      tourWait -= dt;
+      if(tourWait <= 0){ tourIdx = (tourIdx+1) % LANDMARKS.length; tourGo(); }
+    }
+  } else {
+    // 手動飛行
+    const sp = 42 * drone.speedMul * dt;
+    const fwd = getViewDir();
+    const flat = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
+    const right = new THREE.Vector3(-flat.z, 0, flat.x);
+    const k = drone.keys;
+    if(k["KeyW"]||k["ArrowUp"])    camera.position.addScaledVector(fwd, sp);
+    if(k["KeyS"]||k["ArrowDown"])  camera.position.addScaledVector(fwd, -sp);
+    if(k["KeyA"]||k["ArrowLeft"])  camera.position.addScaledVector(right, -sp);
+    if(k["KeyD"]||k["ArrowRight"]) camera.position.addScaledVector(right, sp);
+    if(k["Space"])     camera.position.y += sp;
+    if(k["ShiftLeft"]||k["ShiftRight"]) camera.position.y -= sp;
+    if(altDir) camera.position.y += altDir * sp * 1.2;
+    // 觸控搖桿
+    if(moveVec.x || moveVec.y){
+      camera.position.addScaledVector(flat, -moveVec.y * sp * 1.4);
+      camera.position.addScaledVector(right, moveVec.x * sp * 1.4);
+    }
+    clampCam();
+  }
+
+  renderer.render(scene, camera);
+}
+
+window.addEventListener("resize", ()=>{
+  camera.aspect = W()/H();
+  camera.updateProjectionMatrix();
+  renderer.setSize(W(), H());
+});
+
+document.getElementById("loading").style.opacity = 0;
+setTimeout(()=>document.getElementById("loading").remove(), 600);
+animate();
+</script>
+</body>
+</html>
